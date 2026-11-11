@@ -34,6 +34,7 @@ const SUBCOMMANDS = [
 	{ value: "update", label: "update", description: "Re-index changed files and re-author stale parts" },
 	{ value: "open", label: "open", description: "Open the blueprint viewer in the browser" },
 	{ value: "status", label: "status", description: "Show blueprint, viewer and LSP status" },
+	{ value: "cancel", label: "cancel", description: "Abort a running build or update" },
 ];
 
 /**
@@ -202,7 +203,7 @@ export default function blueprint(pi: ExtensionAPI): void {
 	// ---- /blueprint ----------------------------------------------------------
 
 	pi.registerCommand("blueprint", {
-		description: "Drill-down blueprint of this repository: build | update | open | status",
+		description: "Drill-down blueprint of this repository: build | update | open | status | cancel",
 		getArgumentCompletions: prefix => {
 			const items = SUBCOMMANDS.filter(s => s.value.startsWith(prefix.trim()));
 			return items.length ? items : null;
