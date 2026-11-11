@@ -23,6 +23,14 @@ describe("store", () => {
 		expect(await store.drainPicks()).toEqual([]);
 	});
 
+	test("a drain that crashed after renaming the queue is recovered by the next drain", async () => {
+		const store = new Store(dir);
+		await Bun.write(join(store.dir, "picks.jsonl.draining-crashed"), `${JSON.stringify({ id: "old", timestamp: "t", kind: "node", target: "s1" })}\n`);
+		await store.appendPick({ id: "new", timestamp: "t", kind: "node", target: "s2" });
+		expect((await store.drainPicks()).map(p => p.id).sort()).toEqual(["new", "old"]);
+		expect(await store.drainPicks()).toEqual([]);
+	});
+
 	test("ensure() excludes .blueprint/ via .git/info/exclude once, without touching .gitignore", async () => {
 		Bun.spawnSync(["git", "init", "-q"], { cwd: dir });
 		const store = new Store(dir);

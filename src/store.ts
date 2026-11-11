@@ -1,6 +1,6 @@
 /** Store: the `.blueprint/` directory — single source of truth for graph, nodes, and queues. */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type {
 	Blueprint,
@@ -11,7 +11,7 @@ import type {
 	Pick,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
-import { appendJsonl, readJsonl } from "./util";
+import { appendJsonl, readJsonl, uniqueId } from "./util";
 
 /** A range pick target, `file:start-end`. */
 export interface RangeTarget {
@@ -155,9 +155,30 @@ export class Store {
 
 	// -- viewer → agent queue ------------------------------------------------
 
+	/**
+	 * Take every queued pick exactly once. The queue file is renamed aside
+	 * before it is read, so a pick appended meanwhile lands in a fresh
+	 * picks.jsonl for the next drain instead of being truncated away. Files
+	 * left behind by a drain that crashed are picked up here too.
+	 */
 	async drainPicks(): Promise<Pick[]> {
-		const picks = await readJsonl<Pick>(this.picksPath);
-		if (picks.length > 0) await Bun.write(this.picksPath, "");
+		try {
+			await rename(this.picksPath, join(this.dir, `picks.jsonl.draining-${uniqueId("d")}`));
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+		}
+		let names: string[];
+		try {
+			names = (await readdir(this.dir)).filter(n => n.startsWith("picks.jsonl.draining-")).sort();
+		} catch {
+			return [];
+		}
+		const picks: Pick[] = [];
+		for (const name of names) {
+			const path = join(this.dir, name);
+			picks.push(...(await readJsonl<Pick>(path)));
+			await rm(path, { force: true });
+		}
 		return picks;
 	}
 
