@@ -108,6 +108,15 @@ describe("checker", () => {
 		expect(rules(checkNode(index, node("x", [cite("a.ts#parse")], { title: "one two three four", blurb: Array(25).fill("w").join(" ") }), []))).toEqual([]);
 	});
 
+	test("C1 rejects reversed and fractional ranges, so C6 cannot be passed with a negative length", () => {
+		// Inside run (62-200) in both bounds, but reversed: previously passed C1 and, with length -78, C6.
+		const reversed = node("x", [{ symbol: "a.ts#run", file: "a.ts", start: 150, end: 70 }]);
+		expect(rules(checkNode(index, reversed, []))).toEqual(["C1", "C6"]);
+		expect(rules(checkNode(index, node("x", [{ symbol: "a.ts#run", file: "a.ts", start: 62.5, end: 70 }]), []))).toContain("C1");
+		// A one-line range is still a valid forward range.
+		expect(rules(checkNode(index, node("x", [cite("a.ts#run", 70, 70)]), []))).toEqual([]);
+	});
+
 	test("C6 requires a leaf to cite a range of 60 lines or fewer", () => {
 		expect(rules(checkNode(index, node("x", [cite("a.ts#run")]), []))).toContain("C6"); // 139 lines
 		expect(rules(checkNode(index, node("x", [cite("a.ts#run", 62, 121)]), []))).not.toContain("C6"); // exactly 60

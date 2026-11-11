@@ -27,6 +27,11 @@ function warn(rule: string, message: string): CheckIssue {
 	return { rule, severity: "warn", message };
 }
 
+/** A citation range of whole lines, start ≥ 1 and start ≤ end. */
+export function wellFormed(c: Pick<Citation, "start" | "end">): boolean {
+	return Number.isInteger(c.start) && Number.isInteger(c.end) && c.start >= 1 && c.start <= c.end;
+}
+
 /** Scope of a node: its cited symbols plus anything they contain or call (C4). */
 export function scopeOf(index: GraphIndex, cites: Citation[]): Set<string> {
 	const scope = new Set<string>();
@@ -62,6 +67,10 @@ export function checkNode(
 		}
 		if (cite.file !== sym.range.file) {
 			issues.push(reject("C1", `citation file ${cite.file} does not match symbol ${sym.id} (${sym.range.file})`));
+			continue;
+		}
+		if (!wellFormed(cite)) {
+			issues.push(reject("C1", `citation range ${cite.start}-${cite.end} is not a forward range of whole lines starting at 1 or later`));
 			continue;
 		}
 		if (cite.start < sym.range.start || cite.end > sym.range.end) {
@@ -146,7 +155,7 @@ export function checkNode(
 
 	// C6: a leaf cites at least one range of 60 lines or fewer.
 	if (childNodes.length === 0) {
-		const hasSmall = node.cites.some(c => c.end - c.start + 1 <= 60);
+		const hasSmall = node.cites.some(c => wellFormed(c) && c.end - c.start + 1 <= 60);
 		if (!hasSmall) {
 			issues.push(reject("C6", `leaf cites no range of 60 lines or fewer`));
 		}

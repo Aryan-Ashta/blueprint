@@ -6,7 +6,7 @@
  * the OMP adapter implements; this module never touches OMP's API.
  */
 
-import { checkNode, materializeSubmission, scopeOf, type RawSubmission } from "./checker";
+import { checkNode, materializeSubmission, scopeOf, wellFormed, type RawSubmission } from "./checker";
 import type { GraphIndex } from "./graph";
 import type { BlueprintNode, Citation, GraphSymbol } from "./types";
 import { wordCount } from "./util";
@@ -312,7 +312,7 @@ export function salvageSubtree(index: GraphIndex, nodes: BlueprintNode[], parent
 	for (const node of nodes) {
 		node.cites = node.cites.filter(c => {
 			const s = index.symbol(c.symbol);
-			return !!s && s.range.file === c.file && c.start >= s.range.start && c.end <= s.range.end;
+			return !!s && s.range.file === c.file && wellFormed(c) && c.start >= s.range.start && c.end <= s.range.end;
 		});
 	}
 	for (const node of nodes) {
