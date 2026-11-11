@@ -23,33 +23,82 @@ export class FileLines {
 	}
 }
 
-/** Hash of the cited ranges and the signatures of cited symbols (spec §4.2). */
+/** How far (in lines) re-anchoring searches from a citation's old position. */
+const ANCHOR_RADIUS = 5000;
+
+const blockHash = (lines: string[]) => hashString(lines.join("\n"));
+
+/**
+ * Move a citation to where its cited text now is, if the text moved without
+ * changing (e.g. lines inserted above it). Searches outward from the old
+ * position so the nearest copy wins. Returns true when the citation moved.
+ */
+async function reanchor(c: Citation, files: FileLines): Promise<boolean> {
+	if (!c.textHash) return false;
+	const lines = await files.lines(c.file);
+	if (!lines) return false;
+	const len = c.end - c.start + 1;
+	const at = (start: number) => start >= 1 && start + len - 1 <= lines.length && blockHash(lines.slice(start - 1, start - 1 + len)) === c.textHash;
+	if (at(c.start)) return false;
+	for (let d = 1; d <= ANCHOR_RADIUS; d++) {
+		for (const start of [c.start - d, c.start + d]) {
+			if (at(start)) {
+				c.start = start;
+				c.end = start + len - 1;
+				return true;
+			}
+		}
+		if (c.start - d < 1 && c.start + d + len - 1 > lines.length) break;
+	}
+	return false;
+}
+
+/**
+ * Hash of the cited text and the signatures of cited symbols (spec §4.2).
+ * Line numbers are deliberately left out: code that only moved is not stale.
+ */
 export async function sourceHash(node: BlueprintNode, index: GraphIndex, files: FileLines): Promise<string> {
 	const parts: string[] = [];
 	for (const c of [...node.cites].sort((a, b) => a.symbol.localeCompare(b.symbol) || a.start - b.start)) {
 		const text = await files.slice(c.file, c.start, c.end);
 		const sym = index.symbol(c.symbol);
-		parts.push(`${c.symbol}|${c.file}:${c.start}-${c.end}|${sym ? (sym.signature ?? "") : "<missing>"}|${text ? text.join("\n") : "<missing>"}`);
+		parts.push(`${c.symbol}|${c.file}|${sym ? (sym.signature ?? "") : "<missing>"}|${text ? text.join("\n") : "<missing>"}`);
 	}
 	return hashString(parts.join("\n\0"));
 }
 
+/** Record each citation's text hash (its anchor) and each node's source hash. */
 export async function hashAll(bp: Blueprint, index: GraphIndex, files: FileLines): Promise<void> {
-	for (const node of Object.values(bp.nodes)) node.sourceHash = await sourceHash(node, index, files);
+	for (const node of Object.values(bp.nodes)) {
+		for (const c of node.cites) {
+			const text = await files.slice(c.file, c.start, c.end);
+			c.textHash = text ? blockHash(text) : undefined;
+		}
+		node.sourceHash = await sourceHash(node, index, files);
+	}
 }
 
-/** Recompute hashes against current files; return ids whose hash changed (marking them stale). */
-export async function markStale(bp: Blueprint, index: GraphIndex, files: FileLines): Promise<string[]> {
+export interface StaleResult {
+	/** Nodes whose cited code or signatures changed. */
+	stale: string[];
+	/** True when any citation was re-anchored (the blueprint changed and should be saved). */
+	moved: boolean;
+}
+
+/** Re-anchor moved citations, then recompute hashes; changed nodes are marked stale. */
+export async function markStale(bp: Blueprint, index: GraphIndex, files: FileLines): Promise<StaleResult> {
 	const stale: string[] = [];
+	let moved = false;
 	for (const node of Object.values(bp.nodes)) {
 		if (node.id === bp.root) continue;
+		for (const c of node.cites) if (await reanchor(c, files)) moved = true;
 		const h = await sourceHash(node, index, files);
 		if (node.sourceHash !== undefined && h !== node.sourceHash) {
 			node.stale = true;
 			stale.push(node.id);
 		}
 	}
-	return stale;
+	return { stale, moved };
 }
 
 /** Stale nodes with no stale ancestor: the minimal set of subtrees to re-author. */

@@ -58,6 +58,8 @@ export interface Citation {
 	file: string;
 	start: number; // 1-based
 	end: number; // 1-based
+	/** Hash of the cited lines when last hashed: re-anchors the citation when the code moves. */
+	textHash?: string;
 }
 
 export interface Arrow {

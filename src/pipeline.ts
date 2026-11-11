@@ -198,8 +198,8 @@ function emptyBlueprint(root: string): Blueprint {
 export async function refreshStaleness(root: string, store: Store): Promise<string[]> {
 	const [bp, graph] = await Promise.all([store.readBlueprint(), store.readGraph()]);
 	if (!bp || !graph) return [];
-	const stale = await markStale(bp, new GraphIndex(graph), new FileLines(root));
-	if (stale.length > 0) await store.writeBlueprint(bp);
+	const { stale, moved } = await markStale(bp, new GraphIndex(graph), new FileLines(root));
+	if (stale.length > 0 || moved) await store.writeBlueprint(bp);
 	return stale;
 }
 
@@ -221,7 +221,7 @@ export async function update(deps: PipelineDeps): Promise<UpdateReport> {
 	const files = new FileLines(deps.root);
 
 	// 3. Recompute hashes; changed → stale.
-	const stale = new Set(await markStale(bp, index, files));
+	const stale = new Set((await markStale(bp, index, files)).stale);
 	for (const n of Object.values(bp.nodes)) if (n.stale) stale.add(n.id);
 
 	// 5. Re-run the overview if a step's root symbols vanished or a new entry point appeared.
