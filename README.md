@@ -95,5 +95,3 @@ bun install
 bun run typecheck
 bun test
 ```
-
-No standalone Bun? The `omp` binary embeds one: `BUN_BE_BUN=1 omp test test/`.
