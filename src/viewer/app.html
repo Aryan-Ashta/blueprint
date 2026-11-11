@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blueprint</title>
+<style>
+	:root {
+		--canvas: #f5f5f5; --dot: #d9d9d9; --card: #ffffff; --fg: #1e1e1e; --muted: #757575; --faint: #b3b3b3;
+		--line: #e6e6e6; --chrome: #ffffff; --chrome-border: #e6e6e6; --select: #0d99ff; --select-soft: rgba(13,153,255,.12);
+		--edge: #8a8a8a; --edge-proven: #4b4b4b; --changed: #f24822; --review: #ffa629; --hl: #fff4d6; --sel: #e5f4ff;
+		--shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.06);
+		--shadow-hover: 0 2px 4px rgba(0,0,0,.08), 0 10px 28px rgba(0,0,0,.10);
+		--chrome-shadow: 0 2px 6px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04);
+		--code-bg: #fbfbfb;
+		font: 13px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+		color-scheme: light;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--canvas: #1e1e1e; --dot: #383838; --card: #2c2c2c; --fg: #f0f0f0; --muted: #a0a0a0; --faint: #5c5c5c;
+			--line: #3a3a3a; --chrome: #2c2c2c; --chrome-border: #3a3a3a; --select-soft: rgba(13,153,255,.18);
+			--edge: #6e6e6e; --edge-proven: #c4c4c4; --hl: #3a3218; --sel: #12324a;
+			--shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+			--shadow-hover: 0 2px 4px rgba(0,0,0,.5), 0 10px 28px rgba(0,0,0,.45);
+			--chrome-shadow: 0 2px 8px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.05);
+			--code-bg: #252525;
+			color-scheme: dark;
+		}
+	}
+	* { box-sizing: border-box; }
+	html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--fg); }
+	button { font: inherit; color: inherit; }
+
+	/* ---- canvas ---- */
+	#viewport { position: absolute; inset: 0; overflow: hidden; cursor: default;
+		background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.2px); background-size: 24px 24px; }
+	#viewport.panning { cursor: grabbing; }
+	#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+	#world > svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+
+	.frame { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--card) 55%, transparent);
+		outline: 1px solid var(--line); }
+	.frame-label { position: absolute; transform: translateY(-100%); padding-bottom: 6px; font-size: 12px; color: var(--muted);
+		white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+	.frame-label b { color: var(--fg); font-weight: 500; }
+
+	.node { position: absolute; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); cursor: pointer;
+		padding: 14px 16px 12px 18px; display: flex; flex-direction: column; gap: 4px; overflow: visible;
+		transition: box-shadow .15s ease, transform .15s ease; animation: pop .22s ease both; }
+	.node::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 4px 4px 0; background: var(--accent); }
+	.node:hover { box-shadow: var(--shadow-hover), 0 0 0 2px var(--select); transform: translateY(-1px); }
+	.node.inferred { background: repeating-linear-gradient(135deg, transparent 0 8px, color-mix(in srgb, var(--fg) 2.5%, transparent) 8px 16px), var(--card);
+		box-shadow: var(--shadow), inset 0 0 0 1.5px color-mix(in srgb, var(--faint) 70%, transparent); }
+	.node.inferred:hover { box-shadow: var(--shadow-hover), 0 0 0 2px var(--select); }
+	.node.stale { opacity: .45; filter: saturate(0); }
+	.node .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--accent); text-transform: uppercase; }
+	.node .t { font-size: 14px; font-weight: 600; line-height: 1.3; }
+	.node .b { font-size: 12px; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+	.node .foot { margin-top: auto; display: flex; gap: 6px; align-items: center; }
+	.chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+		background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--muted); }
+	.chip.accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+	.chip.review { background: color-mix(in srgb, var(--review) 20%, transparent); color: color-mix(in srgb, var(--review) 70%, var(--fg)); }
+	.badge { position: absolute; top: -6px; right: -6px; width: 14px; height: 14px; border-radius: 50%; background: var(--changed);
+		box-shadow: 0 0 0 3px var(--card); }
+	.badge::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--changed); opacity: .5; animation: ping 1.8s ease-out infinite; }
+	.port { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--faint); transform: translate(-50%, -50%); }
+
+	.edge { fill: none; stroke: var(--edge); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+	.edge.proven { stroke: var(--edge-proven); stroke-width: 2; }
+	.edge.inferred { stroke-dasharray: 6 6; stroke-width: 2; }
+	.edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: context-menu; }
+	.edge-group:hover .edge { stroke: var(--select); }
+	.edge-label rect { fill: var(--card); stroke: var(--line); }
+	.edge-label text { fill: var(--muted); font-size: 11px; font-weight: 500; }
+
+	/* ---- floating chrome ---- */
+	.bar { position: fixed; z-index: 10; background: var(--chrome); border-radius: 10px; box-shadow: var(--chrome-shadow);
+		display: flex; align-items: center; height: 40px; padding: 0 6px; gap: 2px; }
+	#topbar { top: 12px; left: 12px; max-width: calc(100vw - 260px); }
+	.logo { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; margin-right: 4px;
+		background: linear-gradient(135deg, #a259ff, #0d99ff); color: #fff; font-weight: 700; font-size: 13px; }
+	#crumbs { display: flex; align-items: center; gap: 2px; overflow: hidden; white-space: nowrap; }
+	.crumb { border: 0; background: none; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--muted); }
+	.crumb:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--fg); }
+	.crumb.current { color: var(--fg); font-weight: 600; cursor: default; }
+	.crumb.current:hover { background: none; }
+	.sep { color: var(--faint); }
+	#zoombar { top: 12px; right: 12px; }
+	.ibtn { border: 0; background: none; height: 28px; min-width: 28px; padding: 0 6px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; }
+	.ibtn:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+	#zoomlabel { min-width: 52px; font-variant-numeric: tabular-nums; font-size: 12px; }
+	.divider { width: 1px; height: 20px; background: var(--chrome-border); margin: 0 4px; }
+	#legend { bottom: 12px; left: 12px; height: 36px; padding: 0 12px; gap: 14px; font-size: 12px; color: var(--muted); }
+	#legend span { display: inline-flex; align-items: center; gap: 6px; }
+	#legend svg { overflow: visible; }
+	#hint { bottom: 12px; right: 12px; height: 36px; padding: 0 12px; font-size: 12px; color: var(--muted); }
+	kbd { font: 11px ui-monospace, monospace; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
+
+	/* ---- inspector ---- */
+	.panel { position: fixed; z-index: 11; top: 12px; right: 12px; bottom: 12px; width: min(560px, 46vw); background: var(--chrome);
+		border-radius: 12px; box-shadow: var(--chrome-shadow); display: flex; flex-direction: column; transform: translateX(calc(100% + 24px));
+		transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+	.panel.open { transform: none; }
+	#inspector header { padding: 16px 16px 12px 20px; border-bottom: 1px solid var(--chrome-border); position: relative; }
+	#inspector header::before { content: ""; position: absolute; left: 0; top: 16px; height: 22px; width: 4px; border-radius: 0 4px 4px 0; background: var(--accent); }
+	#inspector h2 { margin: 0 32px 4px 0; font-size: 16px; }
+	#inspector .sub { color: var(--muted); font-size: 12px; }
+	#inspector .tags { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+	#inspector .close { position: absolute; right: 10px; top: 10px; }
+	#inspector .body { overflow: auto; padding: 14px 16px 20px; flex: 1; }
+	.cite { margin-bottom: 14px; border: 1px solid var(--chrome-border); border-radius: 10px; overflow: hidden; background: var(--code-bg); }
+	.cite-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 8px 12px;
+		border-bottom: 1px solid var(--chrome-border); background: var(--chrome); font-size: 12px; }
+	.cite-head code { font: 500 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+	.cite-head .sym { color: var(--muted); }
+	.link { border: 0; background: none; color: var(--select); cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+	.link:hover { background: var(--select-soft); }
+	pre { margin: 0; padding: 6px 0; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-x: auto; }
+	.ln { display: flex; white-space: pre; padding-right: 12px; }
+	.ln .n { width: 48px; flex: none; text-align: right; padding-right: 14px; color: var(--faint); user-select: none; cursor: pointer; }
+	.ln .n:hover { color: var(--select); }
+	.ln.hl { background: var(--hl); }
+	.ln.hl .n { color: var(--muted); }
+	.ln.sel { background: var(--sel); box-shadow: inset 2px 0 0 var(--select); }
+	.hint-line { color: var(--muted); font-size: 12px; }
+
+	/* ---- ask ---- */
+	.ask-btn { border: 0; height: 28px; padding: 0 10px 0 8px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+		background: var(--select); color: #fff; font-weight: 600; font-size: 12px; }
+	.ask-btn:hover { filter: brightness(1.08); }
+	.ask-btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+	.ask-btn kbd { background: rgba(255,255,255,.22); color: #fff; }
+	#ask { width: min(480px, 42vw); }
+	#ask header { padding: 14px 14px 12px 18px; border-bottom: 1px solid var(--chrome-border); display: flex; align-items: center; gap: 10px; }
+	#ask header .spark { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #a259ff, #0d99ff); font-size: 13px; }
+	#ask header h2 { margin: 0; font-size: 14px; flex: 1; }
+	#ask header .model { color: var(--muted); font-size: 11px; font-weight: 400; display: block; }
+	#thread { flex: 1; overflow: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+	.q { align-self: flex-end; max-width: 85%; background: var(--select); color: #fff; padding: 8px 12px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
+	.q .about { display: block; font-size: 11px; opacity: .8; margin-bottom: 2px; }
+	.a { align-self: stretch; line-height: 1.55; }
+	.a p { margin: 0 0 8px; }
+	.a ul, .a ol { margin: 0 0 8px; padding-left: 20px; }
+	.a li { margin: 2px 0; }
+	.a code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
+	.a pre { background: var(--code-bg); border: 1px solid var(--chrome-border); border-radius: 8px; padding: 8px 12px; margin: 0 0 8px; }
+	.a pre code { padding: 0; background: none; }
+	.a.error { color: var(--changed); }
+	.nodelink { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 6px; margin: 0 1px; border-radius: 10px; border: 0; cursor: pointer;
+		font: 500 12px Inter, ui-sans-serif, system-ui, sans-serif; vertical-align: 1px;
+		background: color-mix(in srgb, var(--accent) 14%, transparent); color: color-mix(in srgb, var(--accent) 80%, var(--fg)); }
+	.nodelink::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+	.nodelink:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+	.status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+	.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--select); animation: spin .7s linear infinite; }
+	.caret::after { content: "▍"; color: var(--select); animation: blink 1s steps(2) infinite; }
+	.suggest { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+	.suggest .lead { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+	.suggest button { text-align: left; border: 1px solid var(--chrome-border); background: none; padding: 9px 12px; border-radius: 10px; cursor: pointer; }
+	.suggest button:hover { border-color: var(--select); background: var(--select-soft); }
+	#composer { margin: 8px 12px 12px; border: 1px solid var(--chrome-border); border-radius: 12px; background: var(--card); transition: border-color .15s, box-shadow .15s; }
+	#composer:focus-within { border-color: var(--select); box-shadow: 0 0 0 3px var(--select-soft); }
+	#composer textarea { display: block; width: 100%; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; padding: 10px 12px 4px; max-height: 160px; }
+	#composer .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 6px 10px; }
+	#ctxchip:empty { display: none; }
+	#ctxchip .x { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; }
+	#send { width: 30px; height: 30px; border: 0; border-radius: 8px; background: var(--select); color: #fff; cursor: pointer; display: grid; place-items: center; margin-left: auto; }
+	#send:disabled { opacity: .35; cursor: default; }
+	#send.stop { background: var(--fg); color: var(--chrome); }
+	.node.flash { animation: flash 1.2s ease 2; }
+	@keyframes spin { to { transform: rotate(360deg); } }
+	@keyframes blink { 50% { opacity: 0; } }
+	@keyframes flash { 0%, 100% { box-shadow: var(--shadow); } 40% { box-shadow: var(--shadow-hover), 0 0 0 4px var(--select); } }
+	/* ---- menu, toast, empty ---- */
+	#menu { position: fixed; display: none; z-index: 30; min-width: 220px; padding: 6px; border-radius: 10px; background: #2c2c2c; color: #fff;
+		box-shadow: 0 10px 30px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.06); font-size: 12px; }
+	#menu .item { display: flex; justify-content: space-between; gap: 16px; padding: 6px 10px; border-radius: 6px; cursor: default; }
+	#menu .item:hover { background: var(--select); }
+	#menu .item .k { color: rgba(255,255,255,.5); }
+	#menu .item:hover .k { color: #fff; }
+	#menu .title { padding: 4px 10px 6px; color: rgba(255,255,255,.5); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+	#menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.1); margin: 4px 0; }
+	#toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; transform: translate(-50%, 12px); background: #2c2c2c; color: #fff;
+		padding: 10px 16px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); opacity: 0; transition: .2s ease; pointer-events: none; font-size: 12px; }
+	#toast.show { opacity: 1; transform: translate(-50%, 0); }
+	#empty { position: fixed; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); }
+	#empty .card { background: var(--chrome); padding: 28px 36px; border-radius: 14px; box-shadow: var(--chrome-shadow); }
+	#empty h2 { color: var(--fg); margin: 12px 0 4px; font-size: 16px; }
+
+	@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
+	@keyframes ping { from { transform: scale(.6); opacity: .6; } to { transform: scale(1.4); opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="viewport"><div id="world"></div></div>
+
+<div class="bar" id="topbar">
+	<div class="logo">B</div>
+	<div id="crumbs"></div>
+</div>
+
+<div class="bar" id="zoombar">
+	<button class="ask-btn" id="askbtn" title="Ask about this codebase (/)">✦ Ask <kbd>/</kbd></button>
+	<div class="divider"></div>
+	<button class="ibtn" id="zoomout" title="Zoom out (−)">−</button>
+	<button class="ibtn" id="zoomlabel" title="Zoom to fit (Shift+1)">100%</button>
+	<button class="ibtn" id="zoomin" title="Zoom in (+)">+</button>
+	<div class="divider"></div>
+	<button class="ibtn" id="fit" title="Zoom to fit (Shift+1)">
+		<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9"/></svg>
+	</button>
+</div>
+
+<div class="bar" id="legend">
+	<span><svg width="26" height="6"><path d="M1 3H22" stroke="var(--edge-proven)" stroke-width="2"/><path d="M20 0L25 3L20 6z" fill="var(--edge-proven)"/></svg>Proven call</span>
+	<span><svg width="26" height="6"><path d="M1 3H22" stroke="var(--edge)" stroke-width="2" stroke-dasharray="5 4"/><path d="M20 0L25 3L20 6z" fill="var(--edge)"/></svg>Inferred</span>
+	<span><i style="width:9px;height:9px;border-radius:50%;background:var(--changed);display:inline-block"></i>Changed by agent</span>
+	<span><i class="chip review" style="height:16px;padding:0 6px">Review</i>Not fully verified</span>
+</div>
+
+<div class="bar" id="hint"><span>Scroll to pan · <kbd>⌘</kbd>+scroll to zoom · <kbd>/</kbd> ask · <kbd>Esc</kbd> back · right-click for actions</span></div>
+
+<aside id="ask" class="panel">
+	<header>
+		<div class="spark">✦</div>
+		<h2>Ask about this codebase<span class="model" id="ask-model">Answers come from the blueprint and its call graph</span></h2>
+		<button class="ibtn" id="ask-close" title="Close (Esc)">✕</button>
+	</header>
+	<div id="thread"></div>
+	<div id="composer">
+		<textarea id="question" rows="2" placeholder="Where does … happen? What calls …? How does … work?"></textarea>
+		<div class="row">
+			<span id="ctxchip"></span>
+			<button id="send" title="Send (Enter)" disabled>
+				<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12V2M2.5 6.5L7 2l4.5 4.5"/></svg>
+			</button>
+		</div>
+	</div>
+</aside>
+
+<aside id="inspector" class="panel">
+	<header>
+		<h2 id="ins-title"></h2>
+		<div class="sub" id="ins-path"></div>
+		<div class="tags" id="ins-tags"></div>
+		<button class="ibtn close" id="ins-close" title="Close (Esc)">✕</button>
+	</header>
+	<div class="body" id="ins-body"></div>
+</aside>
+
+<div id="empty"><div class="card"><div class="logo" style="margin:auto;width:40px;height:40px;font-size:18px">B</div>
+	<h2>No blueprint yet</h2><div>Run <kbd>/blueprint build</kbd> in omp.</div></div></div>
+<div id="menu"></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+const api = (path, params = {}) => `${path}?${new URLSearchParams({ ...params, t: TOKEN })}`;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const SVG = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs = {}) => { const e = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+
+// FigJam-like palette, one colour per top-level step; descendants inherit it.
+const PALETTE = ["#0d99ff", "#9747ff", "#14ae5c", "#ff7a00", "#f24e9b", "#00b5ad", "#e5a000", "#5b5bd6", "#ef4444"];
+const state = { bp: null, changed: new Set(), path: [], selection: null, leaf: null, canAsk: false };
+const view = { x: 0, y: 0, k: 1 };
+let elk;
+
+const stepIndex = id => { const m = /^s(\d+)/.exec(id || ""); return m ? Number(m[1]) - 1 : -1; };
+const colorOf = id => { const i = stepIndex(id); return i < 0 ? "var(--select)" : PALETTE[i % PALETTE.length]; };
+
+function loadElk() {
+	return new Promise((resolve, reject) => {
+		const s = document.createElement("script");
+		s.src = api("/elk.js");
+		s.onload = () => resolve(new ELK());
+		s.onerror = reject;
+		document.head.appendChild(s);
+	});
+}
+
+async function load() {
+	const data = await (await fetch(api("/api/blueprint"))).json();
+	state.bp = data.blueprint;
+	state.changed = new Set(data.changed || []);
+	state.canAsk = !!data.canAsk;
+	$("askbtn").disabled = !state.canAsk;
+	$("askbtn").title = state.canAsk ? "Ask about this codebase (/)" : "Ask needs the omp session that started this viewer";
+	if (!state.bp) return;
+	state.path = state.path.filter(id => state.bp.nodes[id]);
+	if (state.path[0] !== state.bp.root) state.path = [state.bp.root];
+	if (state.leaf && !state.bp.nodes[state.leaf]) state.leaf = null;
+}
+
+function toast(msg) {
+	const t = $("toast");
+	t.textContent = msg;
+	t.classList.add("show");
+	clearTimeout(toast.timer);
+	toast.timer = setTimeout(() => t.classList.remove("show"), 2000);
+}
+
+const current = () => state.bp.nodes[state.path[state.path.length - 1]];
+const hasChangedDescendant = n => n.children.some(id => state.changed.has(id) || (state.bp.nodes[id] && hasChangedDescendant(state.bp.nodes[id])));
+const pathTitles = id => { const out = []; let n = state.bp.nodes[id]; while (n && n.id !== state.bp.root) { out.unshift(n.title); n = state.bp.nodes[n.parent]; } return out; };
+
+// ---- pan & zoom ----------------------------------------------------------------
+
+function applyView() {
+	$("world").style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+	const vp = $("viewport");
+	vp.style.backgroundSize = `${24 * view.k}px ${24 * view.k}px`;
+	vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
+	$("zoomlabel").textContent = Math.round(view.k * 100) + "%";
+}
+
+function zoomAt(k, cx, cy) {
+	k = Math.min(3, Math.max(0.2, k));
+	view.x = cx - (cx - view.x) * (k / view.k);
+	view.y = cy - (cy - view.y) * (k / view.k);
+	view.k = k;
+	applyView();
+}
+
+let bounds = { w: 0, h: 0 };
+function fit(animate = true) {
+	const panel = document.querySelector(".panel.open");
+	const insp = panel ? panel.offsetWidth + 24 : 0;
+	const W = innerWidth - insp, H = innerHeight;
+	const pad = { top: 96, bottom: 80, side: 64 };
+	const k = Math.min(1.25, (W - pad.side * 2) / bounds.w, (H - pad.top - pad.bottom) / bounds.h);
+	view.k = Math.max(0.2, k);
+	view.x = (W - bounds.w * view.k) / 2;
+	view.y = pad.top + (H - pad.top - pad.bottom - bounds.h * view.k) / 2;
+	const world = $("world");
+	world.style.transition = animate ? "transform .3s cubic-bezier(.2,.8,.2,1)" : "";
+	applyView();
+	if (animate) setTimeout(() => (world.style.transition = ""), 320);
+}
+
+const vp = $("viewport");
+vp.addEventListener("wheel", ev => {
+	ev.preventDefault();
+	// Pinch sends small deltas, a mouse wheel ~100 per notch: clamp so one notch is ≈1.35×.
+	if (ev.ctrlKey || ev.metaKey) zoomAt(view.k * Math.exp(-Math.max(-30, Math.min(30, ev.deltaY)) * 0.01), ev.clientX, ev.clientY);
+	else { view.x -= ev.deltaX; view.y -= ev.deltaY; applyView(); }
+}, { passive: false });
+let drag = null;
+vp.addEventListener("pointerdown", ev => {
+	if (ev.button !== 0 || ev.target.closest(".node")) return;
+	drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y };
+	vp.classList.add("panning");
+	vp.setPointerCapture(ev.pointerId);
+});
+vp.addEventListener("pointermove", ev => { if (drag) { view.x = drag.vx + ev.clientX - drag.x; view.y = drag.vy + ev.clientY - drag.y; applyView(); } });
+vp.addEventListener("pointerup", () => { drag = null; vp.classList.remove("panning"); });
+$("zoomin").onclick = () => zoomAt(view.k * 1.25, innerWidth / 2, innerHeight / 2);
+$("zoomout").onclick = () => zoomAt(view.k / 1.25, innerWidth / 2, innerHeight / 2);
+$("zoomlabel").onclick = () => fit();
+$("fit").onclick = () => fit();
+addEventListener("resize", () => fit(false));
+
+// ---- breadcrumbs ---------------------------------------------------------------
+
+function renderCrumbs() {
+	const c = $("crumbs");
+	c.innerHTML = "";
+	state.path.forEach((id, i) => {
+		if (i) c.insertAdjacentHTML("beforeend", '<span class="sep">/</span>');
+		const n = state.bp.nodes[id];
+		const b = document.createElement("button");
+		const last = i === state.path.length - 1;
+		b.className = "crumb" + (last ? " current" : "");
+		b.textContent = n.title;
+		if (!last) b.onclick = () => navigate(state.path.slice(0, i + 1));
+		c.appendChild(b);
+	});
+}
+
+function navigate(path) {
+	state.path = path;
+	closeInspector(false);
+	render();
+}
+
+// ---- diagram -------------------------------------------------------------------
+
+const NODE_W = 256, NODE_H = 136, FRAME_PAD = 48;
+
+const measureCtx = document.createElement("canvas").getContext("2d");
+/** Pill width for a connector label, measured in the label's own font. */
+function labelWidth(text) {
+	measureCtx.font = "500 11px Inter, ui-sans-serif, system-ui, -apple-system, sans-serif";
+	return Math.ceil(measureCtx.measureText(text).width) + 20;
+}
+
+/** Orthogonal polyline → path with rounded corners (Figma connector style). */
+function roundedPath(pts, r = 10) {
+	let d = `M${pts[0].x},${pts[0].y}`;
+	for (let i = 1; i < pts.length - 1; i++) {
+		const p = pts[i], a = pts[i - 1], b = pts[i + 1];
+		const r1 = Math.min(r, Math.hypot(p.x - a.x, p.y - a.y) / 2, Math.hypot(b.x - p.x, b.y - p.y) / 2);
+		const ux = Math.sign(p.x - a.x), uy = Math.sign(p.y - a.y), vx = Math.sign(b.x - p.x), vy = Math.sign(b.y - p.y);
+		d += ` L${p.x - ux * r1},${p.y - uy * r1} Q${p.x},${p.y} ${p.x + vx * r1},${p.y + vy * r1}`;
+	}
+	const last = pts[pts.length - 1];
+	return d + ` L${last.x},${last.y}`;
+}
+
+async function render() {
+	closeMenu();
+	if (!state.bp) { $("empty").style.display = "grid"; return; }
+	$("empty").style.display = "none";
+	renderCrumbs();
+	const node = current();
+	const kids = node.children.map(id => state.bp.nodes[id]).filter(Boolean);
+	const laid = await elk.layout({
+		id: "g",
+		layoutOptions: {
+			"elk.algorithm": "layered",
+			"elk.direction": "RIGHT",
+			"elk.edgeRouting": "ORTHOGONAL",
+			"elk.spacing.nodeNode": "40",
+			"elk.layered.spacing.nodeNodeBetweenLayers": "88",
+			"elk.edgeLabels.placement": "CENTER",
+			"elk.spacing.edgeLabel": "6",
+			"elk.layered.spacing.edgeNodeBetweenLayers": "28",
+			"elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+			"elk.padding": `[top=${FRAME_PAD},left=${FRAME_PAD},bottom=${FRAME_PAD},right=${FRAME_PAD}]`,
+		},
+		children: kids.map(k => ({ id: k.id, width: NODE_W, height: NODE_H })),
+		// ELK reserves room for labels so pills never sit on top of cards.
+		edges: node.arrows.map((a, i) => ({
+			id: "e" + i,
+			sources: [a.from],
+			targets: [a.to],
+			labels: a.label ? [{ id: "l" + i, text: a.label, width: labelWidth(a.label), height: 22 }] : [],
+		})),
+	});
+	const world = $("world");
+	world.innerHTML = "";
+	bounds = { w: laid.width, h: laid.height + 28 };
+
+	// Frame (Figma frame with its name above the top-left corner).
+	const frame = document.createElement("div");
+	frame.className = "frame";
+	Object.assign(frame.style, { left: "0px", top: "28px", width: laid.width + "px", height: laid.height + "px" });
+	const label = document.createElement("div");
+	label.className = "frame-label";
+	label.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><path d="M3 0v10M7 0v10M0 3h10M0 7h10"/></svg><b>${esc(node.id === state.bp.root ? node.title : node.title)}</b>${node.blurb ? `<span>— ${esc(node.blurb)}</span>` : ""}`;
+	frame.appendChild(label);
+	world.appendChild(frame);
+
+	const svg = svgEl("svg", { width: laid.width, height: laid.height + 28 });
+	svg.style.top = "28px";
+	svg.innerHTML = `<defs>
+		<marker id="ah-p" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1L9,5L0,9z" fill="var(--edge-proven)"/></marker>
+		<marker id="ah-i" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1L9,5L0,9z" fill="var(--edge)"/></marker>
+	</defs>`;
+	world.appendChild(svg);
+
+	const ports = [];
+	(laid.edges || []).forEach((e, i) => {
+		const arrow = node.arrows[i];
+		for (const s of e.sections || []) {
+			const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
+			const d = roundedPath(pts);
+			const g = svgEl("g", { class: "edge-group" });
+			const hit = svgEl("path", { d, class: "edge-hit" });
+			hit.addEventListener("contextmenu", ev => openMenu(ev, arrowMenu(arrow)));
+			g.append(hit, svgEl("path", { d, class: "edge " + (arrow.proven ? "proven" : "inferred"), "marker-end": `url(#${arrow.proven ? "ah-p" : "ah-i"})` }));
+			for (const l of e.labels || []) {
+				// ELK reserves the space beside the line; Figma draws the pill on the line itself.
+				const cx = l.x + l.width / 2;
+				let cy = l.y + l.height / 2;
+				for (let j = 1; j < pts.length; j++) {
+					const a = pts[j - 1], b = pts[j];
+					if (a.y === b.y && cx >= Math.min(a.x, b.x) && cx <= Math.max(a.x, b.x)) { cy = a.y; break; }
+				}
+				const lg = svgEl("g", { class: "edge-label" });
+				lg.append(
+					svgEl("rect", { x: cx - l.width / 2, y: cy - l.height / 2, width: l.width, height: l.height, rx: l.height / 2 }),
+					Object.assign(svgEl("text", { x: cx, y: cy + 4, "text-anchor": "middle" }), { textContent: arrow.label }),
+				);
+				g.appendChild(lg);
+			}
+			svg.appendChild(g);
+			ports.push(s.startPoint);
+		}
+	});
+
+	for (const k of laid.children) {
+		const n = state.bp.nodes[k.id];
+		const el = document.createElement("div");
+		el.className = "node" + (n.inferred ? " inferred" : "") + (n.stale ? " stale" : "");
+		el.dataset.id = n.id;
+		el.style.setProperty("--accent", colorOf(n.id));
+		Object.assign(el.style, { left: k.x + "px", top: k.y + 28 + "px", width: k.width + "px", height: k.height + "px", animationDelay: `${Math.min(0.25, k.x / 4000).toFixed(3)}s` });
+		const changed = state.changed.has(n.id) || hasChangedDescendant(n);
+		const chips = [
+			n.children.length ? `<span class="chip accent">${n.children.length} parts ›</span>` : `<span class="chip">⟨/⟩ ${n.cites.length} cite${n.cites.length === 1 ? "" : "s"}</span>`,
+			n.needsReview ? '<span class="chip review">Review</span>' : "",
+			n.stale ? '<span class="chip">Stale</span>' : "",
+			n.inferred ? '<span class="chip">Inferred</span>' : "",
+		].join("");
+		const step = stepIndex(n.id);
+		const eyebrow = node.id === state.bp.root && step >= 0 ? `Step ${step + 1}` : (n.cites[0] ? n.cites[0].file.split("/").pop() : "");
+		el.innerHTML = `${changed ? '<span class="badge" title="Changed by agent"></span>' : ""}
+			<div class="eyebrow">${esc(eyebrow)}</div><div class="t">${esc(n.title)}</div><div class="b">${esc(n.blurb)}</div><div class="foot">${chips}</div>`;
+		el.title = n.stale ? "Stale: cited code changed since this was written" : n.blurb;
+		el.onclick = () => (n.children.length ? navigate([...state.path, n.id]) : openInspector(n));
+		el.addEventListener("contextmenu", ev => openMenu(ev, nodeMenu(n)));
+		if (state.leaf === n.id) el.style.boxShadow = "var(--shadow-hover), 0 0 0 2px var(--select)";
+		world.appendChild(el);
+	}
+	for (const p of ports) {
+		const dot = document.createElement("div");
+		dot.className = "port";
+		Object.assign(dot.style, { left: p.x + "px", top: p.y + 28 + "px" });
+		world.appendChild(dot);
+	}
+
+	// A leaf reached by navigation (e.g. top-level step without parts) opens straight in the inspector.
+	if (!kids.length) openInspector(node);
+	fit(false);
+}
+
+// ---- inspector -------------------------------------------------------------------
+
+async function openInspector(node) {
+	state.leaf = node.id;
+	const ins = $("inspector");
+	ins.style.setProperty("--accent", colorOf(node.id));
+	$("ins-title").textContent = node.title;
+	$("ins-path").textContent = [...pathTitles(node.id).slice(0, -1), node.blurb].filter(Boolean).join(" · ");
+	$("ins-tags").innerHTML = [
+		`<span class="chip accent">${esc(node.id)}</span>`,
+		node.needsReview ? '<span class="chip review">Review</span>' : "",
+		node.stale ? '<span class="chip">Stale</span>' : "",
+		node.inferred ? '<span class="chip">Inferred</span>' : "",
+		state.changed.has(node.id) ? '<span class="chip" style="color:var(--changed)">● Changed by agent</span>' : "",
+	].join("");
+	$("ask").classList.remove("open");
+	const wasOpen = ins.classList.contains("open");
+	ins.classList.add("open");
+	if (!wasOpen) fit();
+	document.querySelectorAll(".node").forEach(el => (el.style.boxShadow = ""));
+	const body = $("ins-body");
+	body.innerHTML = "";
+	if (!node.cites.length) { body.innerHTML = '<div class="hint-line">This node cites no code.</div>'; return; }
+	for (const c of node.cites) {
+		const ctx = 6;
+		const data = await (await fetch(api("/api/code", { file: c.file, start: Math.max(1, c.start - ctx), end: c.end + ctx }))).json();
+		if (state.leaf !== node.id) return;
+		const box = document.createElement("section");
+		box.className = "cite";
+		box.innerHTML = `<div class="cite-head"><span><code>${esc(c.file)}:${c.start}–${c.end}</code> <span class="sym">${esc(c.symbol.split("#").pop())}</span></span></div>`;
+		const open = document.createElement("button");
+		open.className = "link";
+		open.textContent = "Open in editor ↗";
+		open.onclick = () => openInEditor(c.file, c.start);
+		box.firstChild.appendChild(open);
+		const pre = document.createElement("pre");
+		if (data.error) pre.textContent = data.error;
+		else data.lines.forEach((text, i) => {
+			const ln = data.start + i;
+			const row = document.createElement("div");
+			row.className = "ln" + (ln >= c.start && ln <= c.end ? " hl" : "");
+			row.dataset.line = ln;
+			row.dataset.file = c.file;
+			row.innerHTML = `<span class="n">${ln}</span><span>${esc(text) || " "}</span>`;
+			row.querySelector(".n").onclick = ev => selectLine(c.file, ln, ev.shiftKey);
+			row.addEventListener("contextmenu", ev => {
+				const s = state.selection;
+				if (!s || s.file !== c.file || ln < s.start || ln > s.end) selectLine(c.file, ln, false);
+				openMenu(ev, rangeMenu(node));
+			});
+			pre.appendChild(row);
+		});
+		box.appendChild(pre);
+		body.appendChild(box);
+	}
+	body.insertAdjacentHTML("beforeend", '<div class="hint-line">Click a line number to select · <kbd>Shift</kbd>-click to extend · right-click to send to the agent</div>');
+}
+
+function closeInspector(refit = true) {
+	if (!$("inspector").classList.contains("open")) return false;
+	$("inspector").classList.remove("open");
+	state.leaf = null;
+	state.selection = null;
+	document.querySelectorAll(".node").forEach(el => (el.style.boxShadow = ""));
+	if (refit) fit();
+	return true;
+}
+$("ins-close").onclick = () => closeInspector();
+
+function selectLine(file, line, extend) {
+	const s = state.selection;
+	state.selection = extend && s && s.file === file
+		? { file, start: Math.min(s.anchor, line), end: Math.max(s.anchor, line), anchor: s.anchor }
+		: { file, start: line, end: line, anchor: line };
+	document.querySelectorAll(".ln").forEach(r => {
+		const l = Number(r.dataset.line);
+		r.classList.toggle("sel", r.dataset.file === state.selection.file && l >= state.selection.start && l <= state.selection.end);
+	});
+}
+
+// ---- context menu ------------------------------------------------------------------
+
+function nodeMenu(n) {
+	const c = n.cites[0];
+	return { title: n.title, items: [
+		["Send to agent", "", () => sendPick("node", n.id)],
+		["Send with note…", "", () => { const note = prompt(`Note for the agent about “${n.title}”:`); if (note !== null) sendPick("node", n.id, note); }],
+		...(state.canAsk ? [["Ask about this…", "/", () => openAsk(n.id)]] : []),
+		"-",
+		...(n.children.length ? [["Open parts", "↵", () => navigate([...state.path, n.id])]] : [["Show code", "↵", () => openInspector(n)]]),
+		...(c ? [["Open in editor", "", () => openInEditor(c.file, c.start)]] : []),
+	] };
+}
+
+function arrowMenu(a) {
+	const from = state.bp.nodes[a.from], to = state.bp.nodes[a.to];
+	const c = from && from.cites[0];
+	return { title: `${from?.title ?? a.from} → ${to?.title ?? a.to} · ${a.proven ? "proven" : "inferred"}`, items: [
+		["Send connection to agent", "", () => sendPick("arrow", `${a.from}->${a.to}`)],
+		...(c ? [["Open source in editor", "", () => openInEditor(c.file, c.start)]] : []),
+	] };
+}
+
+function rangeMenu(node) {
+	const s = state.selection;
+	const target = `${s.file}:${s.start}-${s.end}`;
+	return { title: target, items: [
+		["Send lines to agent", "", () => sendPick("range", target, `in ${node.id} (${node.title})`)],
+		["Send with note…", "", () => { const note = prompt(`Note for the agent about ${target}:`); if (note !== null) sendPick("range", target, note); }],
+		"-",
+		["Open in editor", "", () => openInEditor(s.file, s.start)],
+	] };
+}
+
+function openMenu(ev, { title, items }) {
+	ev.preventDefault();
+	ev.stopPropagation();
+	const m = $("menu");
+	m.innerHTML = `<div class="title">${esc(title)}</div>`;
+	for (const it of items) {
+		if (it === "-") { m.appendChild(document.createElement("hr")); continue; }
+		const [label, key, fn] = it;
+		const d = document.createElement("div");
+		d.className = "item";
+		d.innerHTML = `<span>${esc(label)}</span><span class="k">${esc(key)}</span>`;
+		d.onclick = () => { closeMenu(); fn(); };
+		m.appendChild(d);
+	}
+	m.style.display = "block";
+	m.style.left = Math.min(ev.clientX, innerWidth - m.offsetWidth - 8) + "px";
+	m.style.top = Math.min(ev.clientY, innerHeight - m.offsetHeight - 8) + "px";
+}
+function closeMenu() { $("menu").style.display = "none"; }
+document.addEventListener("click", ev => { if (!ev.target.closest("#menu")) closeMenu(); });
+document.addEventListener("contextmenu", ev => { if (!ev.defaultPrevented) ev.preventDefault(); });
+document.addEventListener("keydown", ev => {
+	if (ev.target.closest && ev.target.closest("input,textarea")) return;
+	if (ev.key === "Escape") {
+		if ($("menu").style.display === "block") return closeMenu();
+		if (closeInspector()) return;
+		if (closeAsk()) return;
+		if (state.path.length > 1) navigate(state.path.slice(0, -1));
+	} else if (ev.key === "/" && state.canAsk) { ev.preventDefault(); openAsk(); }
+	else if (ev.key === "!" || (ev.shiftKey && ev.code === "Digit1")) fit();
+	else if (ev.key === "+" || ev.key === "=") zoomAt(view.k * 1.25, innerWidth / 2, innerHeight / 2);
+	else if (ev.key === "-") zoomAt(view.k / 1.25, innerWidth / 2, innerHeight / 2);
+});
+
+async function sendPick(kind, target, note) {
+	const res = await fetch(api("/api/pick"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, target, note }) });
+	toast(res.ok ? "✓ Sent to agent — arrives with your next prompt" : "Failed to send");
+}
+
+async function openInEditor(file, line) {
+	const res = await fetch(api("/api/open"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file, line }) });
+	toast(res.ok ? `Opening ${file.split("/").pop()}:${line}` : "Could not open editor");
+}
+
+// ---- ask ---------------------------------------------------------------------------------
+
+const asks = new Map(); // ask id → { el, text, status }
+const early = new Map(); // events that arrived before POST /api/ask returned the id
+let askNode = null;
+let activeAsk = null;
+
+function nodeLink(id) {
+	const n = state.bp && state.bp.nodes[id];
+	if (!n) return `<code>${esc(id)}</code>`;
+	return `<button class="nodelink" data-node="${esc(id)}" style="--accent:${colorOf(id)}" title="${esc(pathTitles(id).join(" › "))}">${esc(n.title)}</button>`;
+}
+
+/** Small Markdown subset: fences, inline code, bold, lists, paragraphs, and [[node-id]] links. */
+function renderMarkdown(src) {
+	const inline = s => esc(s)
+		.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+		.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+		.replace(/\[\[([\w.-]+)\]\]/g, (_, id) => nodeLink(id));
+	const out = [];
+	src.split(/```[\w-]*\n?/).forEach((chunk, i) => {
+		if (i % 2) { out.push(`<pre><code>${esc(chunk.replace(/\n$/, ""))}</code></pre>`); return; }
+		let list = null, para = [];
+		const flushPara = () => { if (para.length) out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+		const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map(t => `<li>${inline(t)}</li>`).join("")}</${list.tag}>`); list = null; };
+		for (const line of chunk.split("\n")) {
+			const m = /^\s*(?:([-*])|(\d+)\.)\s+(.*)$/.exec(line);
+			if (m) {
+				flushPara();
+				const tag = m[1] ? "ul" : "ol";
+				if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+				list.items.push(m[3]);
+			} else if (!line.trim()) { flushPara(); flushList(); }
+			else { flushList(); para.push(line); }
+		}
+		flushPara();
+		flushList();
+	});
+	return out.join("");
+}
+
+function suggestions() {
+	const thread = $("thread");
+	if (thread.children.length) return;
+	const n = askNode && state.bp.nodes[askNode];
+	const qs = n
+		? [`Explain “${n.title}” in plain terms.`, `What calls “${n.title}”, and what does it call?`, `What would break if “${n.title}” changed?`]
+		: ["What does this program do, end to end?", "Where is the entry point, and what does it call first?", "Which connections are inferred rather than proven?"];
+	thread.innerHTML = `<div class="suggest"><div class="lead">${n ? `Ask about ${nodeLink(n.id)}` : "Try asking"}</div>${qs.map(q => `<button>${esc(q)}</button>`).join("")}</div>`;
+	thread.querySelectorAll(".suggest > button").forEach(b => (b.onclick = () => { $("question").value = b.textContent; sendAsk(); }));
+}
+
+function renderCtxChip() {
+	const chip = $("ctxchip");
+	const n = askNode && state.bp.nodes[askNode];
+	chip.innerHTML = n ? `<span class="chip accent" style="--accent:${colorOf(n.id)}">About: ${esc(n.title)}<button class="x" title="Ask about the whole codebase">✕</button></span>` : "";
+	if (n) chip.querySelector(".x").onclick = () => { askNode = null; renderCtxChip(); const s = $("thread").querySelector(".suggest"); if (s) { s.remove(); suggestions(); } };
+}
+
+function openAsk(nodeId = null) {
+	if (!state.canAsk) return;
+	closeInspector(false);
+	askNode = nodeId;
+	const s = $("thread").querySelector(".suggest");
+	if (s) s.remove();
+	renderCtxChip();
+	suggestions();
+	const wasOpen = $("ask").classList.contains("open");
+	$("ask").classList.add("open");
+	if (!wasOpen) fit();
+	setTimeout(() => $("question").focus(), 50);
+}
+
+function closeAsk() {
+	if (!$("ask").classList.contains("open")) return false;
+	$("ask").classList.remove("open");
+	$("question").blur();
+	fit();
+	return true;
+}
+$("askbtn").onclick = () => openAsk();
+$("ask-close").onclick = () => closeAsk();
+
+const question = $("question");
+question.addEventListener("input", () => {
+	question.style.height = "auto";
+	question.style.height = Math.min(160, question.scrollHeight) + "px";
+	if (!activeAsk) $("send").disabled = !question.value.trim();
+});
+question.addEventListener("keydown", ev => {
+	if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); sendAsk(); }
+	else if (ev.key === "Escape") { ev.stopPropagation(); closeAsk(); }
+});
+$("send").onclick = () => (activeAsk ? stopAsk() : sendAsk());
+
+function setBusy(id) {
+	activeAsk = id;
+	const send = $("send");
+	send.classList.toggle("stop", !!id);
+	send.disabled = !id && !question.value.trim();
+	send.title = id ? "Stop" : "Send (Enter)";
+	send.innerHTML = id
+		? '<svg width="12" height="12" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
+		: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12V2M2.5 6.5L7 2l4.5 4.5"/></svg>';
+}
+
+async function sendAsk() {
+	const text = question.value.trim();
+	if (!text || activeAsk) return;
+	const thread = $("thread");
+	const s = thread.querySelector(".suggest");
+	if (s) s.remove();
+	const about = askNode && state.bp.nodes[askNode];
+	thread.insertAdjacentHTML("beforeend", `<div class="q">${about ? `<span class="about">About ${esc(about.title)}</span>` : ""}${esc(text)}</div>`);
+	const el = document.createElement("div");
+	el.className = "a";
+	el.innerHTML = '<div class="status"><span class="spinner"></span><span>Starting…</span></div>';
+	thread.appendChild(el);
+	thread.scrollTop = thread.scrollHeight;
+	question.value = "";
+	question.style.height = "auto";
+	setBusy("pending");
+	const res = await fetch(api("/api/ask"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: text, node: askNode || undefined }) });
+	const data = await res.json().catch(() => ({}));
+	if (!res.ok || !data.id) {
+		el.className = "a error";
+		el.textContent = data.error || "Could not ask.";
+		setBusy(null);
+		return;
+	}
+	asks.set(data.id, { el, text: "", status: "Starting…" });
+	setBusy(data.id);
+	for (const ev of early.get(data.id) || []) onAnswer(ev);
+	early.delete(data.id);
+}
+
+function stopAsk() {
+	if (activeAsk && activeAsk !== "pending") fetch(api("/api/ask/cancel"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: activeAsk }) });
+}
+
+function onAnswer(ev) {
+	const entry = asks.get(ev.id);
+	if (!entry) { if (!early.has(ev.id)) early.set(ev.id, []); early.get(ev.id).push(ev); return; }
+	const thread = $("thread");
+	const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40;
+	if (ev.kind === "status") entry.status = ev.text;
+	else if (ev.kind === "reset") entry.text = "";
+	else if (ev.kind === "delta") entry.text += ev.text;
+	const finished = ev.kind === "done" || ev.kind === "error";
+	if (ev.kind === "error" && !entry.text) { entry.el.className = "a error"; entry.el.textContent = ev.text; }
+	else {
+		const status = !finished && !entry.text ? `<div class="status"><span class="spinner"></span><span>${esc(entry.status)}…</span></div>` : "";
+		const tail = ev.kind === "error" ? `<p class="status">${esc(ev.text)}</p>` : "";
+		entry.el.innerHTML = renderMarkdown(entry.text) + status + tail;
+		if (!finished && entry.text) entry.el.lastElementChild?.classList.add("caret");
+	}
+	if (finished) { asks.delete(ev.id); if (activeAsk === ev.id) setBusy(null); }
+	if (atBottom) thread.scrollTop = thread.scrollHeight;
+}
+
+/** Follow a [[node]] link: open its diagram, or its parent's with the card highlighted. */
+$("thread").addEventListener("click", async ev => {
+	const link = ev.target.closest(".nodelink");
+	if (!link) return;
+	const id = link.dataset.node;
+	const chain = [];
+	for (let n = state.bp.nodes[id]; n; n = state.bp.nodes[n.parent]) chain.unshift(n.id);
+	const target = state.bp.nodes[id];
+	if (target.children.length) { state.path = chain; await render(); return; }
+	state.path = chain.slice(0, -1);
+	await render();
+	const card = document.querySelector(`.node[data-id="${CSS.escape(id)}"]`);
+	if (card) { card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); }
+});
+
+// ---- live updates --------------------------------------------------------------------
+
+function connect() {
+	const es = new EventSource(api("/api/events"));
+	const refresh = async () => {
+		const leaf = state.leaf;
+		await load();
+		await render();
+		if (leaf && state.bp?.nodes[leaf]) openInspector(state.bp.nodes[leaf]);
+	};
+	for (const ev of ["changed", "stale", "rebuilt"]) es.addEventListener(ev, refresh);
+	es.addEventListener("answer", ev => onAnswer(JSON.parse(ev.data)));
+}
+
+(async () => {
+	elk = await loadElk();
+	await load();
+	await render();
+	connect();
+})();
+</script>
+</body>
+</html>

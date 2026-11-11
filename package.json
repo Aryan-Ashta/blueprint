@@ -1,0 +1,31 @@
+{
+	"name": "omp-blueprint",
+	"version": "0.1.0",
+	"description": "Oh My Pi plugin: a checked, drill-down blueprint of a repository — ordered steps, diagrams of parts, cited code.",
+	"license": "MIT",
+	"author": "Aryan Ashta",
+	"repository": { "type": "git", "url": "git+https://github.com/Aryan-Ashta/mappr.git" },
+	"homepage": "https://github.com/Aryan-Ashta/mappr#readme",
+	"bugs": { "url": "https://github.com/Aryan-Ashta/mappr/issues" },
+	"type": "module",
+	"keywords": ["omp-package", "oh-my-pi", "omp", "codebase-map", "blueprint", "lsp", "call-graph"],
+	"files": ["src", "README.md", "LICENSE"],
+	"engines": {
+		"omp": ">=18.18.7"
+	},
+	"scripts": {
+		"test": "bun test test/",
+		"typecheck": "tsc --noEmit -p tsconfig.json"
+	},
+	"dependencies": {
+		"elkjs": "^0.12.1"
+	},
+	"devDependencies": {
+		"@oh-my-pi/pi-coding-agent": "18.18.8",
+		"@types/bun": "latest",
+		"typescript": "^5.9.3"
+	},
+	"omp": {
+		"extensions": ["./src/index.ts"]
+	}
+}
