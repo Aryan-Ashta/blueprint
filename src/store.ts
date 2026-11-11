@@ -1,7 +1,7 @@
 /** Store: the `.blueprint/` directory — single source of truth for graph, nodes, and queues. */
 
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type {
 	Blueprint,
 	BlueprintConfig,
@@ -12,6 +12,21 @@ import type {
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { appendJsonl, readJsonl } from "./util";
+
+/** A range pick target, `file:start-end`. */
+export interface RangeTarget {
+	file: string;
+	start: number;
+	end: number;
+}
+
+export function parseRangeTarget(target: string): RangeTarget | null {
+	const m = /^(.+):(\d+)-(\d+)$/.exec(target);
+	if (!m) return null;
+	const start = Number(m[2]);
+	const end = Number(m[3]);
+	return start >= 1 && start <= end ? { file: m[1], start, end } : null;
+}
 
 export class Store {
 	readonly dir: string;
@@ -123,6 +138,19 @@ export class Store {
 	async writeMeta(meta: BlueprintMeta): Promise<void> {
 		await this.ensure();
 		await Bun.write(this.metaPath, JSON.stringify(meta, null, "\t") + "\n");
+	}
+
+	/**
+	 * The repo-relative path of `file` if it is a file the fact graph indexed,
+	 * else null. Everything the viewer or a pick can read or open must pass this:
+	 * it rejects absolute paths, `..` traversal and any file outside the graph.
+	 */
+	async indexedFile(file: string): Promise<string | null> {
+		if (!file || file.includes("\0") || file.startsWith("/") || /^[a-zA-Z]:/.test(file)) return null;
+		const normalized = posix.normalize(file.replaceAll("\\", "/"));
+		if (normalized.startsWith("../") || normalized === "..") return null;
+		const graph = await this.readGraph();
+		return graph?.files.some(f => f.path === normalized) ? normalized : null;
 	}
 
 	// -- viewer → agent queue ------------------------------------------------

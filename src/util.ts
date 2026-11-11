@@ -24,8 +24,9 @@ export function relPath(root: string, absPath: string): string {
 	return relative(root, absPath).replaceAll("\\", "/");
 }
 
+/** Join a repo-relative path onto the root; an absolute `rel` is treated as relative, never passed through. */
 export function absPath(root: string, rel: string): string {
-	return rel.startsWith("/") ? rel : join(root, rel);
+	return join(root, rel);
 }
 
 export function stableId(file: string, qualifiedName: string, overload = 0): string {

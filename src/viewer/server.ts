@@ -6,9 +6,9 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { join, normalize } from "node:path";
+import { join } from "node:path";
 import type { AskEvent, AskRequest } from "../ask";
-import type { Store } from "../store";
+import { parseRangeTarget, type Store } from "../store";
 import type { Pick } from "../types";
 import { absPath, uniqueId } from "../util";
 
@@ -173,10 +173,8 @@ export class ViewerServer {
 
 	/** Lines of an indexed file. Only files present in the fact graph are readable. */
 	private async getCode(url: URL): Promise<Response> {
-		const file = normalize(url.searchParams.get("file") ?? "").replaceAll("\\", "/");
-		if (!file || file.startsWith("..") || file.startsWith("/")) return json({ error: "bad file" }, 400);
-		const graph = await this.opts.store.readGraph();
-		if (!graph?.files.some(f => f.path === file)) return json({ error: "file not in blueprint" }, 404);
+		const file = await this.opts.store.indexedFile(url.searchParams.get("file") ?? "");
+		if (!file) return json({ error: "file not in blueprint" }, 404);
 		const f = Bun.file(absPath(this.opts.root, file));
 		if (!(await f.exists())) return json({ error: "file missing" }, 404);
 		const lines = (await f.text()).split("\n");
@@ -189,6 +187,13 @@ export class ViewerServer {
 		const body = (await req.json()) as Partial<Pick>;
 		if (!body.kind || !["node", "arrow", "range"].includes(body.kind) || typeof body.target !== "string") {
 			return json({ error: "pick needs kind (node|arrow|range) and target" }, 400);
+		}
+		// A range pick's code is sent to the model: only files the graph indexed may be named.
+		if (body.kind === "range") {
+			const range = parseRangeTarget(body.target);
+			const file = range && (await this.opts.store.indexedFile(range.file));
+			if (!range || !file) return json({ error: "range must be file:start-end in a file the blueprint indexed" }, 400);
+			body.target = `${file}:${range.start}-${range.end}`;
 		}
 		const pick: Pick = {
 			id: uniqueId("pick"),
@@ -204,8 +209,8 @@ export class ViewerServer {
 
 	private async postOpen(req: Request): Promise<Response> {
 		const body = (await req.json()) as { file?: string; line?: number };
-		const file = normalize(body.file ?? "").replaceAll("\\", "/");
-		if (!file || file.startsWith("..") || file.startsWith("/")) return json({ error: "bad file" }, 400);
+		const file = await this.opts.store.indexedFile(body.file ?? "");
+		if (!file) return json({ error: "file not in blueprint" }, 404);
 		const abs = absPath(this.opts.root, file);
 		const line = Math.max(1, Math.floor(Number(body.line) || 1));
 		const argv = editorArgv(this.opts.editorCommand, abs, line);

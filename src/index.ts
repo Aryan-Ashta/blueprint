@@ -23,7 +23,7 @@ import {
 import { GraphIndex } from "./graph";
 import { build, refreshStaleness, update } from "./pipeline";
 import { LspRegistry } from "./lsp";
-import { Store } from "./store";
+import { parseRangeTarget, Store } from "./store";
 import type { Blueprint, Pick } from "./types";
 import { type AskHandler, ViewerServer } from "./viewer/server";
 
@@ -81,7 +81,7 @@ function openInBrowser(url: string): void {
 }
 
 /** Render picks as context the model can act on: cited code for nodes and ranges. */
-async function picksMessage(bp: Blueprint | null, picks: Pick[], cwd: string): Promise<string> {
+async function picksMessage(bp: Blueprint | null, picks: Pick[], cwd: string, store: Store): Promise<string> {
 	const files = new FileLines(cwd);
 	const parts: string[] = [`The user selected ${picks.length} item(s) in the blueprint viewer as context for this request.`];
 	for (const pick of picks) {
@@ -99,9 +99,11 @@ async function picksMessage(bp: Blueprint | null, picks: Pick[], cwd: string): P
 					`To cites: ${b?.cites.map(c => `${c.file}:${c.start}-${c.end}`).join(", ") || "-"}`,
 			);
 		} else if (pick.kind === "range") {
-			const m = /^(.+):(\d+)-(\d+)$/.exec(pick.target);
-			const lines = m ? await files.slice(m[1], Number(m[2]), Math.min(Number(m[3]), Number(m[2]) + 150)) : null;
-			parts.push(`## Code range ${pick.target}${note}\n\`\`\`\n${lines?.join("\n") ?? "<unavailable>"}\n\`\`\``);
+			// Re-checked here, not only in the viewer: whatever is in picks.jsonl, only indexed files reach the model.
+			const range = parseRangeTarget(pick.target);
+			const file = range && (await store.indexedFile(range.file));
+			const lines = range && file ? await files.slice(file, range.start, Math.min(range.end, range.start + 150)) : null;
+			parts.push(`## Code range ${pick.target}${note}\n\`\`\`\n${lines?.join("\n") ?? "<unavailable: not a file in the blueprint>"}\n\`\`\``);
 		}
 	}
 	return parts.join("\n\n");
@@ -324,7 +326,7 @@ export default function blueprint(pi: ExtensionAPI): void {
 		return {
 			message: {
 				customType: "blueprint",
-				content: await picksMessage(bp, picks, ctx.cwd),
+				content: await picksMessage(bp, picks, ctx.cwd, p.store),
 				display: true,
 				details: { picks },
 			},
