@@ -7,7 +7,6 @@ Design: [`omp-blueprint-spec.md`](https://github.com/Aryan-Ashta/blueprint/blob/
 ## Install
 
 ```sh
-omp plugin install omp-blueprint                    # from npm
 omp plugin install github:Aryan-Ashta/blueprint         # straight from GitHub
 omp plugin link /path/to/this/repo                  # local development
 ```
