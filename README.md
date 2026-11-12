@@ -2,13 +2,13 @@
 
 An [Oh My Pi](https://github.com/can1357/oh-my-pi) plugin that turns a repository into a checked, drill-down **blueprint**: the ordered steps the program takes, each opening onto a diagram of its parts, down to cited line ranges. Built from language-server facts, written by whatever models OMP routes to, shown in a local browser viewer that shares context with the agent both ways.
 
-Design: [`omp-blueprint-spec.md`](https://github.com/Aryan-Ashta/mappr/blob/main/omp-blueprint-spec.md). Requires OMP ≥ 18.18.7.
+Design: [`omp-blueprint-spec.md`](https://github.com/Aryan-Ashta/blueprint/blob/main/omp-blueprint-spec.md). Requires OMP ≥ 18.18.7.
 
 ## Install
 
 ```sh
 omp plugin install omp-blueprint                    # from npm
-omp plugin install github:Aryan-Ashta/mappr         # straight from GitHub
+omp plugin install github:Aryan-Ashta/blueprint         # straight from GitHub
 omp plugin link /path/to/this/repo                  # local development
 ```
 
