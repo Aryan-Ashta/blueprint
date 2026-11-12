@@ -327,15 +327,17 @@ function zoomAt(k, cx, cy) {
 }
 
 let bounds = { w: 0, h: 0 };
-function fit(animate = true) {
+// Without `scale`, zoom to fit; with it, centre at that zoom (top-left anchored if it overflows).
+function fit(animate = true, scale) {
 	const panel = document.querySelector(".panel.open");
 	const insp = panel ? panel.offsetWidth + 24 : 0;
 	const W = innerWidth - insp, H = innerHeight;
 	const pad = { top: 96, bottom: 80, side: 64 };
-	const k = Math.min(1.25, (W - pad.side * 2) / bounds.w, (H - pad.top - pad.bottom) / bounds.h);
+	const k = scale ?? Math.min(1.25, (W - pad.side * 2) / bounds.w, (H - pad.top - pad.bottom) / bounds.h);
 	view.k = Math.max(0.2, k);
 	view.x = (W - bounds.w * view.k) / 2;
-	view.y = pad.top + (H - pad.top - pad.bottom - bounds.h * view.k) / 2;
+	view.y = pad.top + Math.max(0, (H - pad.top - pad.bottom - bounds.h * view.k) / 2);
+	if (bounds.w * view.k > W - pad.side * 2) view.x = pad.side;
 	const world = $("world");
 	world.style.transition = animate ? "transform .3s cubic-bezier(.2,.8,.2,1)" : "";
 	applyView();
@@ -362,7 +364,7 @@ $("zoomin").onclick = () => zoomAt(view.k * 1.25, innerWidth / 2, innerHeight / 
 $("zoomout").onclick = () => zoomAt(view.k / 1.25, innerWidth / 2, innerHeight / 2);
 $("zoomlabel").onclick = () => fit();
 $("fit").onclick = () => fit();
-addEventListener("resize", () => fit(false));
+addEventListener("resize", () => fit(false, view.k));
 
 // ---- breadcrumbs ---------------------------------------------------------------
 
@@ -526,7 +528,7 @@ async function render() {
 
 	// A leaf reached by navigation (e.g. top-level step without parts) opens straight in the inspector.
 	if (!kids.length) openInspector(node);
-	fit(false);
+	fit(false, 1);
 }
 
 // ---- inspector -------------------------------------------------------------------
